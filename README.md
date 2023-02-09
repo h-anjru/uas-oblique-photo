@@ -40,11 +40,11 @@ Applying these principles to drone photogrammetry should increase the accuracy o
 
 You can read more about the simulations, the results, and their application to real-world photo collects [here](/supplemental) or [keep reading below](#experiment-control).
 
-## missionSim.m
-`missionSim()` creates a small simulated photo collection mission for testing bundle adjustment results with BUN2013.exe (not included in this repository).
+## uas_oblique_sim.m
+`uas_oblique_sim()` creates a small simulated photo collection mission for testing bundle adjustment results with BUN2013.exe (not included in this repository).
 
 ### Call
-`missionSim(endlap, sidelap, flying_height, tilt)`
+`uas_oblique_sim(endlap, sidelap, flying_height, tilt)`
 
 ### Input
 `endlap`: endlap from photo to photo (0.0-1.0)

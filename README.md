@@ -121,7 +121,7 @@ The ground sample distance, or GSD, of an aerial photograph is the size of a pix
 
 Ground sample distance $\mathrm{GSD}$ in the direction of tilt is expressed as
 
-$ \mathrm{GSD}(p) = H' \left[ \tan{\left( t + \mu_{p+1} \right)} - \tan{\left(t + \mu_p \right)} \right]$
+$\mathrm{GSD}(p) = H' \left[ \tan{\left( t + \mu_{p+1} \right)} - \tan{\left(t + \mu_p \right)} \right]$
 
 $\mu_p = \arctan{\left( \dfrac{p-m/2}{f} \right)}$
 

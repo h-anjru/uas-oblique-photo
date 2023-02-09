@@ -16,28 +16,28 @@ function x = backproject(X, cam, sigma, format)
 %    Appendix D-4.
 
     % perspective matrices
-    P1 = [eye(3), zeros(3, 1)];
-    P1(3,3) = -1 / cam(7);
+    P = [eye(3), zeros(3, 1)];
+    P(3,3) = -1 / cam(7);
 
-    % rotation matrices (more in the ats or
+    % rotation matrices
     M_tilt = makehgtform('xrotate', deg2rad(cam(4)));
     M_azimuth = makehgtform('zrotate', deg2rad(cam(6)));
-    M1 = M_tilt' * M_azimuth';
+    M = M_tilt' * M_azimuth';
 
     % translation matrices
-    T1 = eye(4);
-    T1(1:3, 4) = -cam(1: 3)';
+    T = eye(4);
+    T(1:3, 4) = -cam(1: 3)';
 
     % homogeneous representation of object space coordinates
     X_ = [X(:, 2:4), ones(size(X, 1), 1)];
     X_ = X_';
 
     % homogenous representation of collinearity equations
-    W1 = P1 * M1 * T1 * X_;
+    W = P * M * T * X_;
 
     % projection onto plane z = 1
-    x = bsxfun(@rdivide, W1, W1(3, :));
-    x = x(1:2, :);  % row 3 omitted
+    x = bsxfun(@rdivide, W, W(3, :));
+    x = x(1:2, :);  % row 3 can now be discarded
 
     % addition of noise
     noise = randn(size(x)) .* sigma;
@@ -50,7 +50,7 @@ function x = backproject(X, cam, sigma, format)
 end
 
 
-function xout = format_filter(x_in, format_in)
+function x_out = format_filter(x_in, format_in)
 
     % format
     format_x = format_in(1);
@@ -58,7 +58,6 @@ function xout = format_filter(x_in, format_in)
 
     for ii = 1:size(x_in, 2)
         if abs(x_in(2, ii)) > 0.5 * format_x || abs(x_in(3, ii)) > 0.5 * format_y
-%         fprintf('Removing point %i...\n', x_in(1, ii))
         x_in(:, ii) = [NaN; NaN; NaN]; 
         end
     end
@@ -66,9 +65,9 @@ function xout = format_filter(x_in, format_in)
     % remove NaN values and reshape to three columns
     if any(any(isnan(x_in)))
         x_in(isnan(x_in)) = []; 
-        xout = reshape(x_in, 3, int8(length(x_in)) / 3);
+        x_out = reshape(x_in, 3, int8(length(x_in)) / 3);
     else
-        xout = x_in;
+        x_out = x_in;
     end
 
 end

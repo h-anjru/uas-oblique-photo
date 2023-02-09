@@ -8,93 +8,128 @@ function missionSim(endlap, sidelap, flying_height, tilt)
 %        sidelap: sidelap from flight line to flight line (0.0-1.0)
 %  flying_height: height above ground (meters)
 %           tilt: angle of tilt of camera from nadir (deg)
-
-%         output: ASCII file (.dat) which is formatted for input into a bundle
-%                 adjustment software, BUN2013.exe, written by Bon Dewitt.
-
+% 
+%         output: ASCII file (.dat) which is formatted for input into a
+%                 bundle adjustment software, BUN2013.exe, written by Bon 
+%                 Dewitt.
+% 
 %  Reference: Wolf, Dewitt, Wilkinson. "Elements of Photogrammetry 4th ed."
 %
 %  Original equations for GSD, B, and W by Lassiter (2017).
 
-    % camera parameters (Canon EOS-Rebel SL1)
+
+    % --------------------------------------------
+    % camera parameters [mm] (Canon EOS-Rebel SL1)
+    % --------------------------------------------
     f = 24;
-    format_y = 22.3;
-    format_x = 14.9;
-    pix = 0.0043;  % [mm]
-    fov = 2*atan2d(format_x, 2 * f);
+    format_x = 22.3;
+    format_y = 14.9;
+    pix = 0.0043;
+
+    % calculate field of view
+    fov = 2*atan2d(format_y, 2 * f);
+
+    % convert focal length from mm to pixels
+    format = [format_x, format_y] ./ pix;
     f_pix = f / pix;
 
-    fprintf('\nf = %i mm\n\n', f);
-
-    % calculate and plot ground sample distance (GSD)
-    m = round(format_x / pix, 0);
+    % calculate ground sample distance (GSD)
+    m = round(format_y / pix, 0);
     p = 1:m;
     mu_(p) = atan((p - 1 - m/2) / f_pix);
     mu(p) = atan((p - m / 2) / f_pix);
     t = deg2rad(tilt);
     gsd(p) = flying_height*(tan(t+mu(p)) - tan(t+mu_(p)));
 
-    % plot(p, gsd, 'LineWidth', 3);
-    fprintf('GSD in direction of flight:\n')
-    fprintf('min = %3.1f cm\n', 100 * min(gsd))
-    fprintf('med = %3.1f cm\n', 100 * median(gsd))
-    fprintf('max = %3.1f cm\n', 100 * max(gsd))
+%     % ground sample distance plot fodder
+%     fig_GSD = figure(0);
+%     fig_GSD.Position = [100 100 100 100];
+% 
+%     plot_GSD = plot(p, gsd);
+%     plot_GSD.LineWidth = 3;
+% 
+%     hold on;
+% 
+%     hold off;
 
     % calculate airbase B and flight line spacing W
     B = flying_height * ...
         (tand(tilt + fov / 2) - tand(tilt - fov / 2)) * ...
         (1 - endlap);
     B = abs(B);
+
     W = flying_height * ...
-        (format_y / (f * cosd(tilt))) * ...
+        (format_x / (f * cosd(tilt))) * ...
         (1 - sidelap);
-    fprintf('\nAirbase = %7.2f m\nAirwidth = %6.2f m\n', B, W)
 
-    % set up camera stations
-    % first, where optical axis intersects ground
-    x = 100;
-    y = 100;
-    X1 = linspace(x, x + 3 * B, 4);
-    X2 = X1 + B / 2;
-    Y1 = [y, y + 2 * W];
-    Y2 = y + W;
+    % print quick mission statistics in command window
+    fprintf('\n');
+    fprintf('f = %i mm\n', f);
+    fprintf('\n');
+    fprintf('GSD in direction of flight:\n');
+    fprintf('min = %3.1f cm\n', 100 * min(gsd));
+    fprintf('med = %3.1f cm\n', 100 * median(gsd));
+    fprintf('max = %3.1f cm\n', 100 * max(gsd));
+    fprintf('\n');
+    fprintf('Airbase = %7.2f m\n', B);
+    fprintf('Airwidth = %6.2f m\n', W);
 
-    % offset for tilt 
-    offset = flying_height * tand(tilt);
-    X1o = X1 - offset;
-    X2o = X2 + offset;
 
-    [XL, YL, ZL] = meshgrid(X1o, Y1, flying_height);
+    % ---------------------------
+    % establish exposure stations
+    % ---------------------------
+    % assume the first exposore station's optical axis intersects h = 0 at
+    % point (x,y)
+    x = 100; y = 100;
+
+    % using B and W, form a three-line pattern (four exposures per line).
+    % initial direction of travel: north (+Y)
+    XL_initial = linspace(x, x + 2 * W, 3);
+    YL_initial = linspace(y, y + 3 * B, 4);
+    
+    [XL, YL, ZL] = meshgrid(XL_initial, YL_initial, flying_height);
     cam = [XL(:), YL(:), ZL(:)];
 
-    [XL_, YL_, ZL_] = meshgrid(X2o, Y2, flying_height);
-    cam = [cam; XL_(:), YL_(:), ZL_(:)];
+    % sort exposure stations into serpentine order
+    offset = flying_height * tand(tilt);
+    cam(5:8, :) = sortrows(cam(5:8, :), 2, 'descend');
 
-    % get camera stations in serpentine order
-    cam = sortrows(cam, 2);
-    cam(5:8, :) = sortrows(cam(5:8, :), 1, 'descend');
+    % add an offset for tilt of camera
+    cam(1:4, 2) = cam(1:4, 2) - offset;
+    cam(5:8, 2) = cam(5:8, 2) + offset;
+    cam(9:12, 2) = cam(1:4, 2);
 
-    % +/-tilt is a -/+y rotation in this case
+    % cam is an array: XL, YL, ZL, o, p, k, f
+    % tilt is an omega (o) rotation in this case
     cam = [cam, zeros(size(cam)), f_pix * ones(size(cam, 1), 1)];
-    cam(:, 5) = -tilt;
-    cam(5:8, 5) = tilt;
+    cam(:, 4) = tilt;
+    cam(5:8, 6) = 180;  % traveling south
 
-    % point array for testing
-    extend = -flying_height / (0.2 * f);
-    xv = linspace(X2(1) - extend, X1(4) + extend, 3);
-    yv = linspace(Y1(1) - extend, Y1(2) + extend, 3);
-    zv = linspace(0, 20, 3);
+    assignin('caller', 'cam', cam);
+
+    % create 3D point array in object space for testing
+    target_height = 20;
+
+    extend = flying_height / (0.2 * f);
+
+    xv = linspace(XL_initial(2) - extend, XL_initial(2) + extend, 3);
+    yv = linspace(YL_initial(2) - extend, YL_initial(3) + extend, 3);
+    zv = linspace(0, target_height, 3);
+
     [X, Y, Z] = meshgrid(xv, yv, zv);
     pts = [X(:), Y(:), Z(:)];
+
     names = 101:101 + size(pts, 1) - 1;
     pts = [names', pts];
+
+    assignin('caller', 'pts', pts);
 
     % cell array to store image matrices
     images = cell(size(cam, 1), 1);
 
-    % call camera stations, send to backproject, store results in cell array
+    % call camera stations, send to backproject
     for ii = 1:size(cam, 1)
-        images{ii} = backproject(pts, cam(ii, :), 0);
+        images{ii} = backproject(pts, cam(ii, :), 0.5, format);
     end
 
     % write results to bun2013.exe dat file
@@ -108,18 +143,18 @@ function missionSim(endlap, sidelap, flying_height, tilt)
     ];
     fid = fopen(outfile, 'wt');
 
-    % focal length
+    % write focal length
     fprintf(fid, '%8.3f\n', f_pix);
 
-    % 'initial approximations' of camera stations
+    % write 'initial approximations' of camera stations
     str = 'A Image%i %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f\n';
     for ii = 1:length(images)
         fprintf(fid, str, ii, cam(ii, 4:6), cam(ii, 1:3));
     end
     fprintf(fid,'#\n');
 
-    % control points and 'initial approximations' of obj space coords
-    control = [1, 3, 5, 7, 9];  % which pts are control points
+    % write GCPs and 'initial approximations' of obj space coords
+    control = [1, 3, 5, 7, 9];  % indices of GCPs (X-pattern)
     str1 = '3 %i %8.3f %8.3f %8.3f   0.005   0.005   0.005\n';
     str2 = 'A %i %8.3f %8.3f %8.3f\n';
     for jj = 1:length(pts)
@@ -131,7 +166,7 @@ function missionSim(endlap, sidelap, flying_height, tilt)
     end
     fprintf(fid, '#\n0.5 0.5\n');
 
-    % image points
+    % write image points to .dat file
     str = 'D %i %8.3f %8.3f\n';
     for kk = 1:length(images)
         image = images{kk};
@@ -142,60 +177,71 @@ function missionSim(endlap, sidelap, flying_height, tilt)
     fprintf(fid, '#\n');
     fclose(fid);
 
-    % % plotting stuff
-    % % individual images
-    % for pp = 1:length(images)
-    %     figure(pp)
-    %     hold on;
-    %     grid on;
-    %     axis equal;
 
-    %     xlabel 'x [pix]';
-    %     ylabel 'y [pix]';
+%     % plot fodder for individual images
+%     for pp = 1:length(images)
+%         fig_img = figure(pp);
+%         fig_img.Position = [300 300 300 300];     
+%         hold on;
+%         grid on;
+%         axis equal;
+% 
+%         xlabel 'x [pix]';
+%         ylabel 'y [pix]';
+% 
+%         xlim([-format_x / pix / 2, format_x / pix / 2])
+%         ylim([-format_y / pix / 2, format_y / pix / 2])
+% 
+%         X = images{pp};
+% 
+%         fprintf('Plotting image %i: ', pp)
+%         fprintf('%i %i\n', size(X))
+%         plot(X(2, :), X(3, :), 'k.');
+%     end
+%     
+%     hold off;
 
-    %     xlim([-format_x / pix / 2, format_x / pix / 2])
-    %     ylim([-format_y / pix / 2, format_y / pix / 2])
-
-    %     X = images{pp};
-
-    %     fprintf('Plotting image %i: ', pp)
-    %     fprintf('%i %i\n', size(X))
-    %     plot(X(2, :), X(3, :), 'k.');
-    % end
-
-    hold off;
 
     % initialize object space figure
-    fig = figure;
+    fig_world = figure;
     hold on;
 
     title([
         'flying height = ' num2str(flying_height), ...
-        'm, tilt = ' num2str(tilt) '�'
+        'm, tilt = ' num2str(tilt) '°'
     ])
 
     grid on;
-
-    zlim([0, flying_height + 20]);
 
     ax = gca;
     ax.GridColor = [0, 0, 0];
     ax.Projection = 'perspective';
 
-    daspect([1 1 1])
-
     xlabel 'X [m]';
     ylabel 'Y [m]';
     zlabel 'Z [m]';
 
-    plot3(pts(:, 2), pts(:, 3), pts(:, 4), '.')  % point array in object space
+    ax.ZLim = [0, flying_height + 20];
+
+    daspect([1 1 1]);
+    view([-30 30])
+
+    % plot object space array
+    plot_array = plot3(pts(:, 2), pts(:, 3), pts(:, 4));
+    plot_array.LineStyle = 'none';
+    plot_array.Marker = '.';
+    plot_array.MarkerSize = 8;
+    plot_array.Color = 'b';
 
     % intersections of optical axes w/ ground
-    [Xg,Yg] = meshgrid(X1, Y1);
+    [Xg, Yg] = meshgrid(XL_initial, YL_initial);
     grnd = [Xg(:) Yg(:)];
-    [Xg, Yg] = meshgrid(X2, Y2);
-    grnd = [grnd; Xg(:) Yg(:)];
-    plot(grnd(:, 1), grnd(:, 2), 'k.', 'MarkerSize', 2)
+
+    plot_opt = plot(grnd(:, 1), grnd(:, 2));
+    plot_opt.LineStyle = 'none';
+    plot_opt.Marker = '+';
+    plot_opt.MarkerSize = 8;
+    plot_opt.Color = 'm';
 
     % camera stations and footprints
     plane_normal = [0 0 1]';
@@ -215,39 +261,54 @@ function missionSim(endlap, sidelap, flying_height, tilt)
     vz = [0 0 +f]';
 
     for nn = 1:length(cam)
+        % scale the exposure stations for plotting
         scale = 500;
-        R = makehgtform('yrotate', deg2rad(cam(nn, 5)));
+        
+        % direct rotation matrix to rotate frustra
+        Ro = makehgtform('xrotate', deg2rad(cam(nn, 4)));
+        Rk = makehgtform('zrotate', deg2rad(cam(nn, 6)));
+        R = Rk * Ro;
+
         T = cam(nn, 1:3);
+
         % axes and format
-        ax = R(1:3, 1:3)*[vx vy vz];
+        ax = R(1:3, 1:3) * [vx vy vz];
         ax = scale * 0.001 * ax;
-        plot3(
+
+        % image x-axes
+        plot3( ...
             [T(1), ax(1, 1) + T(1)], ...
             [T(2), ax(2, 1) + T(2)], ...
             [T(3), ax(3, 1) + T(3)], ...
-            'r', 'LineWidth', 2
-        )
-        plot3(
+            'r', 'LineWidth', 2 ...
+        );
+
+        % image y-axes
+        plot3( ...
             [T(1), ax(1, 2) + T(1)], ...
             [T(2), ax(2, 2) + T(2)], ...
             [T(3), ax(3, 2) + T(3)], ...
-            'g', 'LineWidth', 2
-        )
-        plot3(
+            'g', 'LineWidth', 2 ...
+        );
+
+        % image z-axes
+        plot3( ...
             [T(1), ax(1, 3) + T(1)], ...
             [T(2), ax(2, 3) + T(2)], ...
             [T(3), ax(3, 3) + T(3)], ...
-            'b', 'LineWidth', 2
-        )
+            'b', 'LineWidth', 2 ...
+        );
+
+        % image format
         fo = R(1:3, 1:3) * ([v1, v2, v3, v4, v1] + [0; 0; f]);
         fo = scale * 0.001 * fo;  % scale from mm to m
 
-        plot3(
+        plot3( ...
             fo(1, :) + T(1), ...
             fo(2, :) + T(2), ...
             fo(3, :) + T(3), ...
-            'k-', 'LineWidth', 2
-        )
+            'k-', 'LineWidth', 2 ...
+        );
 
         % footprints
         v = R(1:3, 1:3) * [v1, v2, v3, v4, v1];
@@ -267,28 +328,12 @@ function missionSim(endlap, sidelap, flying_height, tilt)
             points(:, mm) = d * v(:, mm) + T';
         end
 
-        plot(points(1, :), points(2, :), 'k:', 'LineWidth', 2)
+        plot_footprints = plot(points(1, :), points(2, :));
+        plot_footprints.LineStyle = ':';
+        plot_footprints.LineWidth = 2;
+        plot_footprints.Color = 'k';
     end
 
-    % UI control for scaling 
     hold off;
-    view([-30 30])
-
-    % figname = [
-    %     'bun_e' num2str(endlap*100), ...
-    %     '_s' num2str(sidelap*100), ...
-    %     '_h' num2str(flying_height), ...
-    %     '_f' num2str(f), ...
-    %     '_t' num2str(tilt), ...
-    %     '.png'
-    % ];
-    %
-    % saveas(fig, figname)
-
-    % assignin('base', 'pts', pts)
-    % assignin('base', 'cam', cam)
-    % assignin('base', 'B', B)
-    % assignin('base', 'W', W)
-    % assignin('base', 'images', images)
 
 end
